@@ -68,7 +68,8 @@
       {
         "command": "diagsession.clearSourceAnnotations",
         "title": "Clear Profiler Source Annotations",
-        "category": "DiagSession"
+        "category": "DiagSession",
+        "icon": "$(clear-all)"
       },
       {
         "command": "diagsession.clearCache",
@@ -197,6 +198,11 @@
           "command": "diagsession.captures.refresh",
           "when": "view == diagsession.capturesView",
           "group": "navigation@2"
+        },
+        {
+          "command": "diagsession.clearSourceAnnotations",
+          "when": "view == diagsession.capturesView && diagsession.hasSourceAnnotations",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [

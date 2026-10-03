@@ -109,7 +109,7 @@ export class ProfileEditorProvider implements vscode.CustomReadonlyEditorProvide
           break;
         }
         case 'openSource':
-          await this.annotations.show(m.file, m.line, {
+          await this.annotations.show(panel, m.file, m.line, {
             hits: m.hits,
             totalSamples: m.totalSamples,
             sampleMs: m.sampleMs,
@@ -135,6 +135,7 @@ export class ProfileEditorProvider implements vscode.CustomReadonlyEditorProvide
     panel.onDidDispose(() => {
       running?.cancel();
       config.dispose();
+      this.annotations.clear(panel);
     });
   }
 

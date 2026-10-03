@@ -10,13 +10,18 @@ interface Annotation {
   label: string;
 }
 
+interface OwnedAnnotation extends Annotation {
+  /** The report that annotated the file, so closing it removes only its own annotations. */
+  owner: object;
+}
+
 const HEAT_LEVELS = 5;
 
 /** Per-line CPU cost shown in source editors: a heat background plus "total | self" after the line. */
 export class SourceAnnotations implements vscode.Disposable {
   private readonly heat: vscode.TextEditorDecorationType[] = [];
   private readonly text: vscode.TextEditorDecorationType;
-  private readonly byFile = new Map<string, Annotation>();
+  private readonly byFile = new Map<string, OwnedAnnotation>();
   private readonly subscriptions: vscode.Disposable[] = [];
   private sourceGroup: vscode.TabGroup | undefined;
 
@@ -44,12 +49,21 @@ export class SourceAnnotations implements vscode.Disposable {
     this.subscriptions.forEach((d) => d.dispose());
   }
 
-  clear(): void {
-    this.byFile.clear();
+  /** Removes the annotations of one report, or all of them when no owner is given. */
+  clear(owner?: object): void {
+    if (owner === undefined) this.byFile.clear();
+    else for (const [file, a] of this.byFile) if (a.owner === owner) this.byFile.delete(file);
     for (const e of vscode.window.visibleTextEditors) this.apply(e);
+    this.updateContext();
   }
 
-  async show(buildPath: string, line: number, annotation: Annotation): Promise<boolean> {
+  /** Shows the "clear" button of the Captures view only while some file is annotated. */
+  private updateContext(): void {
+    void vscode.commands.executeCommand('setContext', 'diagsession.hasSourceAnnotations', this.byFile.size > 0);
+  }
+
+  async show(owner: object, buildPath: string, line: number, annotation: Annotation): Promise<boolean> {
+    const owned = { ...annotation, owner };
     const local = await resolveSourcePath(buildPath);
     if (!local) {
       const pick = await vscode.window.showWarningMessage(
@@ -61,11 +75,11 @@ export class SourceAnnotations implements vscode.Disposable {
         void vscode.commands.executeCommand('workbench.action.openSettings', 'diagsession.sourcePathMappings');
       } else if (pick === 'Locate File…') {
         const uris = await vscode.window.showOpenDialog({ canSelectMany: false, title: `Locate ${path.basename(buildPath)}` });
-        if (uris?.[0]) return this.open(uris[0], line, annotation);
+        if (uris?.[0]) return this.open(uris[0], line, owned);
       }
       return false;
     }
-    return this.open(vscode.Uri.file(local), line, annotation);
+    return this.open(vscode.Uri.file(local), line, owned);
   }
 
   /** The editor group that shows sources: by default one split below the report, created once and then reused. */
@@ -88,8 +102,9 @@ export class SourceAnnotations implements vscode.Disposable {
     return this.sourceGroup.viewColumn;
   }
 
-  private async open(uri: vscode.Uri, line: number, annotation: Annotation): Promise<boolean> {
+  private async open(uri: vscode.Uri, line: number, annotation: OwnedAnnotation): Promise<boolean> {
     this.byFile.set(uri.fsPath.toLowerCase(), annotation);
+    this.updateContext();
     const doc = await vscode.workspace.openTextDocument(uri);
     const pos = new vscode.Position(Math.max(0, Math.min(line - 1, doc.lineCount - 1)), 0);
     const editor = await vscode.window.showTextDocument(doc, {
