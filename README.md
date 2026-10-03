@@ -3,6 +3,8 @@
 A VS Code extension to profile native code, based on the `VSDiagnostics.exe` Visual Studio tool. It records CPU
 captures (`.diagsession`) and opens them, as well as raw ETW traces (`.etl`), with these views:
 
+![The Profiler view in the activity bar, and a .diagsession report on its Call Tree tab](media/screenshot.png)
+
 | View | What it shows |
 |---|---|
 | **Timeline** (always on top) | CPU usage of the process over time, as % of all processors. Drag to select a time range: every view then analyses only that range. Double-click to clear. |
