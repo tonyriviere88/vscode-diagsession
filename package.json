@@ -321,7 +321,7 @@
     "watch": "node esbuild.mjs --watch",
     "build": "npm run build:analyzer && npm run build:ts",
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p webview",
-    "package": "npm run build && vsce package --no-dependencies --skip-license --allow-missing-repository",
+    "package": "npm run build && vsce package --no-dependencies --skip-license --allow-missing-repository --no-rewrite-relative-links",
     "vscode:prepublish": "npm run build"
   },
   "devDependencies": {
