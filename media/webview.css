@@ -248,6 +248,14 @@ tr.link:hover { background: var(--row-hover); }
 .tt-mod, .tt-hint { color: var(--muted); font-size: 0.9em; }
 .tooltip table td { padding: 1px 10px 1px 0; }
 
+/* Thread timeline ------------------------------------------------------------ */
+.tl { flex: 1; position: relative; min-height: 0; }
+/* No scroll anchoring: resizing the canvas would move the scroll position. */
+.tl-scroller { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overflow-anchor: none; }
+/* The canvas stays in view while the spacer gives the scroll height of every lane. */
+.tl-canvas { position: sticky; top: 0; display: block; cursor: default; }
+.tl-canvas.panning { cursor: grabbing; }
+
 /* Menu, toast, loading ---------------------------------------------------- */
 .menu {
   position: fixed;

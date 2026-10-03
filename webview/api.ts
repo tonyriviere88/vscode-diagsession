@@ -34,8 +34,11 @@ export interface AppApi {
   showInCallTree(func: number): void;
   showInFlameGraph(func: number): void;
   setThreads(threads: Set<number> | null): void;
+  /** Sets the time range every view analyses, as a drag in the CPU graph does. */
+  setTimeRange(range: [number, number] | null): void;
   showMenu(ev: MouseEvent, items: MenuItem[]): void;
-  functionMenu(ev: MouseEvent, func: number, node?: TreeNode): void;
+  /** `extra`: items of the calling view, listed first. */
+  functionMenu(ev: MouseEvent, func: number, node?: TreeNode, extra?: MenuItem[]): void;
   copy(text: string): void;
   reanalyze(opts: { pid?: number; msSymbols?: boolean }): void;
   /** Re-runs the analysis with the PDB of a module searched everywhere (null when it already has symbols). */

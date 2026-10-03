@@ -7,12 +7,13 @@ captures (`.diagsession`) and opens them, as well as raw ETW traces (`.etl`), wi
 
 | View | What it shows |
 |---|---|
-| **Timeline** (always on top) | CPU usage of the process over time, as % of all processors. Drag to select a time range: every view then analyses only that range. Double-click to clear. |
+| **CPU graph** (always on top) | CPU usage of the process over time, as % of all processors. Drag to select a time range: every view then analyses only that range. Double-click to clear. |
 | **Summary** | Process, analysed range, CPU time, average cores, symbol coverage, the **hot path**, top functions by self and by total time. |
 | **Call Tree** | Top-down tree with Total / Self CPU (ms and %), the 🔥 hot path expanded, *Bottom-up* (inverted) mode, *Group by thread*, find (Enter = next match). |
 | **Caller/Callee** | Butterfly view of one function: who calls it, and what it calls. Click ⇄ to make a caller/callee the current function, ← Back to return. |
 | **Functions** | Every sampled function, with self and total time, sortable and filterable. |
 | **Flame Graph** | Icicle (VS style) or classic flame. Click to zoom, double-click for source, search to highlight (shows the matched share). |
+| **Timeline** | The function calls of each thread over time (a flame chart per thread): the main thread first, then the threads that did the most work. Click a thread to expand or collapse it, Ctrl+wheel to zoom, drag to pan, search to highlight. A call goes on across a short pause of its thread (preempted, waiting: 50 ms by default, *Join calls across pauses up to*), and across samples whose stack walk failed; the strip under the thread name shows when it ran. Right-click a call to zoom to it or analyse only that call in every view. |
 | **Modules** | Time per binary, symbol status and path. |
 | **Threads** | CPU per thread with its start function. Tick threads to filter every view. |
 

@@ -10,6 +10,21 @@ interface Hit {
 
 const ROW = 18;
 
+/** Fill and text colour of a frame: own code warm, external cool; while searching, only the matches stand out. */
+export function frameColors(p: Profile, func: number, searching: boolean, matched: boolean): [string, string] {
+  if (searching) {
+    if (matched) return ['hsl(42, 85%, 36%)', '#fff8e0'];
+    return ['#3a3d41', '#b8bcc2'];
+  }
+  if (p.isSynthetic(func)) return ['#44484e', '#e6e6e6'];
+  const mod = p.moduleName(func);
+  const ext = p.isExternal(func);
+  const hue = (hashString(mod) % 50) + (ext ? 190 : 0); // own code warm (0-50), external cool
+  const light = 30 + (hashString(p.funcLabel(func)) % 9);
+  const sat = ext ? 28 : 62;
+  return [`hsl(${hue}, ${sat}%, ${light}%)`, '#f2f2f2'];
+}
+
 /** Canvas flame graph of a call tree: click zooms into a frame, the frames above it stay as breadcrumbs. */
 export class FlameGraph {
   readonly element: HTMLElement;
@@ -130,18 +145,7 @@ export class FlameGraph {
   }
 
   private color(node: TreeNode, matched: boolean): [string, string] {
-    const p = this.profile;
-    if (this.search) {
-      if (matched) return ['hsl(42, 85%, 36%)', '#fff8e0'];
-      return ['#3a3d41', '#b8bcc2'];
-    }
-    if (p.isSynthetic(node.func)) return ['#44484e', '#e6e6e6'];
-    const mod = p.moduleName(node.func);
-    const ext = p.isExternal(node.func);
-    const hue = (hashString(mod) % 50) + (ext ? 190 : 0); // own code warm (0-50), external cool
-    const light = 30 + (hashString(p.funcLabel(node.func)) % 9);
-    const sat = ext ? 28 : 62;
-    return [`hsl(${hue}, ${sat}%, ${light}%)`, '#f2f2f2'];
+    return frameColors(this.profile, node.func, !!this.search, matched);
   }
 
   private draw(): void {

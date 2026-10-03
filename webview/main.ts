@@ -9,6 +9,7 @@ import { CallTreeView } from './views/callTree';
 import { FlameView } from './views/flameView';
 import { FunctionsView, ModulesView, ThreadsView } from './views/lists';
 import { SummaryView } from './views/summary';
+import { TimelineView } from './views/timelineView';
 
 declare function acquireVsCodeApi(): {
   postMessage(m: FromWebview): void;
@@ -73,6 +74,7 @@ class App implements AppApi {
       this.callerCallee,
       this.functions,
       this.flame,
+      new TimelineView(this, this.disposer.signal),
       new ModulesView(this),
       new ThreadsView(this),
     ];
@@ -303,10 +305,15 @@ class App implements AppApi {
     this.menu.style.top = Math.min(ev.clientY, window.innerHeight - h - 4) + 'px';
   }
 
-  functionMenu(ev: MouseEvent, func: number, node?: TreeNode): void {
+  setTimeRange(range: [number, number] | null): void {
+    this.timeline.setRange(range, true);
+  }
+
+  functionMenu(ev: MouseEvent, func: number, node?: TreeNode, extra: MenuItem[] = []): void {
     const p = this.profile;
     const real = !p.isSynthetic(func);
     const items: MenuItem[] = [
+      ...extra,
       { label: 'View source', action: () => this.openSource(func), disabled: !real },
       { label: 'Show callers / callees', action: () => this.showCallerCallee(func), disabled: !real },
       { label: 'Show in call tree', action: () => this.showInCallTree(func) },

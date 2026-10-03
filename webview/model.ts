@@ -67,6 +67,21 @@ export interface ThreadStat {
   last: number;
 }
 
+/** The calls at one stack depth of a thread, in time order: each span is a run of samples with the same frames. */
+export interface CallSpans {
+  start: number[];
+  /** One sample interval after the span's last sample, or the next sample when that comes sooner. */
+  end: number[];
+  func: number[];
+  samples: number[];
+}
+
+/** When a thread ran: runs of samples, in time order. */
+export interface Activity {
+  start: number[];
+  end: number[];
+}
+
 export interface CallerCallee {
   func: number;
   self: number;
@@ -85,6 +100,12 @@ const THREAD_THUNKS = new Set([
   'PspSystemThreadStartup',
   'KiStartUserThreadReturn',
 ]);
+
+/** Entry points only the main thread runs: the CRT startup and the program's main. */
+const MAIN_ENTRY = /^(?:w?mainCRTStartup|w?WinMainCRTStartup|__scrt_common_main(?:_seh)?|invoke_main|w?main|w?WinMain)(?:\(.*\))?$/;
+
+/** A thread unsampled for more than this many intervals was not running: a pause in its activity. */
+const GAP_SAMPLES = 4;
 
 /**
  * Matches functions of the given C++ namespaces (`std`, `boost::asio`...), external even when compiled into the
@@ -118,6 +139,8 @@ export class Profile {
   readonly duration: number;
   readonly threadLabels: string[];
   readonly threadStarts: string[];
+  /** Index of the process's main thread, -1 when it cannot be told. */
+  readonly mainThread: number;
 
   constructor(raw: RawProfile, externalNamespaces: readonly string[]) {
     this.raw = raw;
@@ -154,12 +177,18 @@ export class Profile {
     // A sample with the deepest stack is the most likely to reach the thread's real entry point.
     const bestSample = new Int32Array(raw.threads.length).fill(-1);
     const bestDepth = new Int32Array(raw.threads.length);
+    const mainEntry = new Uint8Array(this.nFuncs);
+    for (let f = 0; f < this.nFuncs; f++) if (MAIN_ENTRY.test(this.funcNames[f])) mainEntry[f] = 1;
+    const runsMain = new Uint8Array(raw.threads.length);
     for (let i = 0; i < raw.sampleThread.length; i++) {
       const s = raw.sampleStack[i];
       if (s < 0) continue;
-      let d = 0;
-      for (let x = s; x >= 0 && d < 400; x = this.stackParent[x]) d++;
       const th = raw.sampleThread[i];
+      let d = 0;
+      for (let x = s; x >= 0 && d < 400; x = this.stackParent[x]) {
+        d++;
+        if (mainEntry[this.stackFunc[x]]) runsMain[th] = 1;
+      }
       if (d > bestDepth[th]) {
         bestDepth[th] = d;
         bestSample[th] = i;
@@ -171,6 +200,56 @@ export class Profile {
       const name = t.name ? `${t.name} ` : '';
       return `${name}(${t.tid})${start ? ' ' + start : ''}`;
     });
+    this.mainThread = this.findMainThread(runsMain, bestSample);
+  }
+
+  /**
+   * The thread that ran the CRT startup or main. Without symbols: the thread entered through the process's own
+   * executable, else the first thread of a process started in the trace.
+   */
+  private findMainThread(runsMain: Uint8Array, bestSample: Int32Array): number {
+    const raw = this.raw;
+    const threads = raw.threads;
+    const earliest = (candidates: boolean[]) => {
+      let main = -1;
+      for (let t = 0; t < threads.length; t++) {
+        if (candidates[t] && (main < 0 || threads[t].startMs < threads[main].startMs)) main = t;
+      }
+      return main;
+    };
+    let main = earliest(Array.from(runsMain, (r) => r === 1));
+    if (main >= 0) return main;
+
+    const base = (name: string) => name.toLowerCase().replace(/\.exe$/, '');
+    const exe = raw.modules.findIndex((m) => base(m.name) === base(raw.process.name));
+    if (exe >= 0) {
+      const entersExe = threads.map((_, t) => {
+        if (bestSample[t] < 0) return false;
+        let entry = -1; // the outermost frame outside the system modules
+        for (let s = raw.sampleStack[bestSample[t]]; s >= 0; s = this.stackParent[s]) {
+          const m = raw.modules[this.funcModule[this.stackFunc[s]]];
+          if (!m || !m.system) entry = this.funcModule[this.stackFunc[s]];
+        }
+        return entry === exe;
+      });
+      main = earliest(entersExe);
+      if (main >= 0) return main;
+    }
+
+    if (!(raw.process.startMs > 0)) return -1;
+    let first = -1;
+    let unique = true;
+    for (let t = 0; t < threads.length; t++) {
+      if (!(threads[t].startMs > 0)) continue;
+      if (first < 0 || threads[t].startMs < threads[first].startMs) {
+        first = t;
+        unique = true;
+      } else if (threads[t].startMs === threads[first].startMs) {
+        unique = false;
+      }
+    }
+    // The main thread is created with the process; a thread started later is not it.
+    return first >= 0 && unique && threads[first].startMs - raw.process.startMs < 100 ? first : -1;
   }
 
   /**
@@ -491,6 +570,134 @@ export class Profile {
       if (t > s.last) s.last = t;
     }
     return stats.filter((s) => s.samples > 0);
+  }
+
+  /** The threads the filter keeps, the main thread first, then the busiest. */
+  threadsByWork(filter: Filter): ThreadStat[] {
+    const main = (s: ThreadStat) => (s.thread === this.mainThread ? 1 : 0);
+    return this.threads(filter)
+      .filter((s) => !filter.threads || filter.threads.has(s.thread))
+      .sort((a, b) => main(b) - main(a) || b.samples - a.samples);
+  }
+
+  private samplesByThread: Int32Array[] | null = null;
+
+  /** Sample indexes of each thread, in time order. */
+  private threadSamples(thread: number): Int32Array {
+    if (!this.samplesByThread) {
+      const raw = this.raw;
+      const counts = new Int32Array(raw.threads.length);
+      for (const th of raw.sampleThread) counts[th]++;
+      const lists = Array.from(counts, (n) => new Int32Array(n));
+      counts.fill(0);
+      for (let i = 0; i < raw.sampleThread.length; i++) {
+        const th = raw.sampleThread[i];
+        lists[th][counts[th]++] = i;
+      }
+      const time = raw.sampleTime;
+      for (const l of lists) {
+        let sorted = true;
+        for (let k = 1; k < l.length && sorted; k++) sorted = time[l[k - 1]] <= time[l[k]];
+        if (!sorted) l.sort((a, b) => time[a] - time[b]);
+      }
+      this.samplesByThread = lists;
+    }
+    return this.samplesByThread[thread];
+  }
+
+  /** Outermost function of a stack. */
+  private stackRoot(stack: number): number {
+    let f = -1;
+    for (let s = stack; s >= 0; s = this.stackParent[s]) f = this.stackFunc[s];
+    return f;
+  }
+
+  private rootByThread: Int32Array | null = null;
+
+  /** The outermost function most of a thread's stacks start with (its entry point), -1 without stacks. */
+  private threadRoot(thread: number): number {
+    if (!this.rootByThread) this.rootByThread = new Int32Array(this.raw.threads.length).fill(-2);
+    if (this.rootByThread[thread] === -2) {
+      const counts = new Map<number, number>();
+      for (const i of this.threadSamples(thread)) {
+        const s = this.raw.sampleStack[i];
+        if (s < 0) continue;
+        const f = this.stackRoot(s);
+        counts.set(f, (counts.get(f) ?? 0) + 1);
+      }
+      let root = -1;
+      for (const [f, n] of counts) if (root < 0 || n > counts.get(root)!) root = f;
+      this.rootByThread[thread] = root;
+    }
+    return this.rootByThread[thread];
+  }
+
+  /**
+   * The calls of a thread over time, per stack depth (root first): consecutive samples with the same frames down to
+   * a depth make one span there. An unsampled thread was not running (preempted, waiting): its calls go on across
+   * such a pause up to `maxPauseMs` long, when the same frames are on the stack after it; a longer one ends them.
+   * A failed stack walk (no stack, or one that does not reach the thread's entry point) says nothing of the calls:
+   * it counts as a pause too.
+   */
+  callSpans(filter: Filter, thread: number, maxPauseMs: number): CallSpans[] {
+    const raw = this.raw;
+    const ms = this.sampleMs;
+    const gap = Math.max(maxPauseMs, GAP_SAMPLES * ms);
+    const root = this.threadRoot(thread);
+    const rows: CallSpans[] = [];
+    const open: number[] = []; // index in rows[d] of the span open at depth d
+    const frames: number[] = [];
+    let prev = -Infinity;
+    const close = (from: number, end: number) => {
+      for (let d = from; d < open.length; d++) rows[d].end[open[d]] = end;
+      open.length = from;
+    };
+    for (const i of this.threadSamples(thread)) {
+      const t = raw.sampleTime[i];
+      if (t < filter.t0 || t > filter.t1) continue;
+      const stack = raw.sampleStack[i];
+      if (root >= 0 && (stack < 0 || this.stackRoot(stack) !== root)) continue;
+      this.frames(stack, filter.hideExternal, frames);
+      const n = frames.length;
+      let k = 0;
+      const running = t - prev <= gap;
+      if (running) while (k < open.length && k < n && rows[k].func[open[k]] === frames[n - 1 - k]) k++;
+      // Samples come about one interval apart, sometimes sooner: a call ends where the next one starts.
+      close(k, running ? Math.min(prev + ms, t) : prev + ms);
+      for (let d = 0; d < k; d++) rows[d].samples[open[d]]++;
+      for (let d = k; d < n; d++) {
+        const r = (rows[d] ??= { start: [], end: [], func: [], samples: [] });
+        open.push(r.start.length);
+        r.start.push(t);
+        r.end.push(t + ms);
+        r.func.push(frames[n - 1 - d]);
+        r.samples.push(1);
+      }
+      prev = t;
+    }
+    close(0, prev + ms);
+    return rows;
+  }
+
+  /** When a thread ran, cut where it went unsampled for a few intervals. */
+  activity(filter: Filter, thread: number): Activity {
+    const raw = this.raw;
+    const ms = this.sampleMs;
+    const gap = GAP_SAMPLES * ms;
+    const out: Activity = { start: [], end: [] };
+    let prev = -Infinity;
+    for (const i of this.threadSamples(thread)) {
+      const t = raw.sampleTime[i];
+      if (t < filter.t0 || t > filter.t1) continue;
+      if (t - prev > gap) {
+        out.start.push(t);
+        out.end.push(t + ms);
+      } else {
+        out.end[out.end.length - 1] = t + ms;
+      }
+      prev = t;
+    }
+    return out;
   }
 
   callerCallee(sel: Selection, func: number): CallerCallee {
