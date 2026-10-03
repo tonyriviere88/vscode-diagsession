@@ -1,0 +1,10 @@
+**
+!package.json
+!README.md
+!LICENSE
+!dist/extension.js
+!dist/webview.js
+!dist/profiler.js
+!media/**
+!bin/analyzer/**
+bin/analyzer/*.pdb

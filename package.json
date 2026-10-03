@@ -1,0 +1,328 @@
+{
+  "name": "vscode-diagsession",
+  "displayName": "DiagSession Profiler",
+  "description": "Profile native Windows code in VS Code, based on the VSDiagnostics.exe Visual Studio tool, and open .diagsession files (CPU Usage): call tree, caller/callee, functions, modules, threads, flame graph and hot source lines.",
+  "version": "0.1.0",
+  "publisher": "rivt",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "diagsession",
+    "profiler",
+    "etw",
+    "etl",
+    "flame graph",
+    "cpu usage"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "diagsession",
+          "title": "Profiler",
+          "icon": "media/profiler.svg"
+        }
+      ]
+    },
+    "views": {
+      "diagsession": [
+        {
+          "type": "webview",
+          "id": "diagsession.profilerView",
+          "name": "Profiler",
+          "icon": "media/profiler.svg"
+        },
+        {
+          "id": "diagsession.capturesView",
+          "name": "Captures",
+          "icon": "media/profiler.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "diagsession.capturesView",
+        "contents": "No capture yet. Start a profiling session above, or open an existing file.\n[Open .diagsession…](command:diagsession.captures.openFile)"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "diagsession.profile",
+        "displayName": "DiagSession Profile",
+        "selector": [
+          { "filenamePattern": "*.diagsession" },
+          { "filenamePattern": "*.etl" }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "diagsession.clearSourceAnnotations",
+        "title": "Clear Profiler Source Annotations",
+        "category": "DiagSession"
+      },
+      {
+        "command": "diagsession.clearCache",
+        "title": "Clear Analysis Cache",
+        "category": "DiagSession"
+      },
+      {
+        "command": "diagsession.profiler.focus",
+        "title": "Show Profiler",
+        "category": "DiagSession"
+      },
+      {
+        "command": "diagsession.profiler.start",
+        "title": "Start Profiling",
+        "category": "DiagSession",
+        "icon": "$(record)",
+        "enablement": "diagsession.profiler.state != running && diagsession.profiler.state != paused && diagsession.profiler.state != busy"
+      },
+      {
+        "command": "diagsession.profiler.attach",
+        "title": "Profile Running Process…",
+        "category": "DiagSession",
+        "icon": "$(debug-alt)",
+        "enablement": "diagsession.profiler.state != running && diagsession.profiler.state != paused && diagsession.profiler.state != busy"
+      },
+      {
+        "command": "diagsession.profiler.pause",
+        "title": "Pause Profiling",
+        "category": "DiagSession",
+        "icon": "$(debug-pause)",
+        "enablement": "diagsession.profiler.state == running"
+      },
+      {
+        "command": "diagsession.profiler.resume",
+        "title": "Resume Profiling",
+        "category": "DiagSession",
+        "icon": "$(debug-continue)",
+        "enablement": "diagsession.profiler.state == paused"
+      },
+      {
+        "command": "diagsession.profiler.stop",
+        "title": "Stop Profiling and Open Report",
+        "category": "DiagSession",
+        "icon": "$(debug-stop)",
+        "enablement": "diagsession.profiler.state == running || diagsession.profiler.state == paused"
+      },
+      {
+        "command": "diagsession.profiler.discard",
+        "title": "Discard Profiling Session",
+        "category": "DiagSession",
+        "icon": "$(trash)",
+        "enablement": "diagsession.profiler.state == running || diagsession.profiler.state == paused"
+      },
+      {
+        "command": "diagsession.captures.refresh",
+        "title": "Refresh",
+        "category": "DiagSession",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "diagsession.captures.openFile",
+        "title": "Open Capture…",
+        "category": "DiagSession",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "diagsession.captures.open",
+        "title": "Open Report",
+        "category": "DiagSession"
+      },
+      {
+        "command": "diagsession.captures.reveal",
+        "title": "Reveal in File Explorer",
+        "category": "DiagSession"
+      },
+      {
+        "command": "diagsession.captures.copyPath",
+        "title": "Copy Path",
+        "category": "DiagSession"
+      },
+      {
+        "command": "diagsession.captures.delete",
+        "title": "Delete",
+        "category": "DiagSession",
+        "icon": "$(trash)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "diagsession.profiler.start",
+          "when": "view == diagsession.profilerView && diagsession.profiler.state != running && diagsession.profiler.state != paused && diagsession.profiler.state != busy",
+          "group": "navigation@1"
+        },
+        {
+          "command": "diagsession.profiler.attach",
+          "when": "view == diagsession.profilerView && diagsession.profiler.state != running && diagsession.profiler.state != paused && diagsession.profiler.state != busy",
+          "group": "navigation@2"
+        },
+        {
+          "command": "diagsession.profiler.pause",
+          "when": "view == diagsession.profilerView && diagsession.profiler.state == running",
+          "group": "navigation@1"
+        },
+        {
+          "command": "diagsession.profiler.resume",
+          "when": "view == diagsession.profilerView && diagsession.profiler.state == paused",
+          "group": "navigation@1"
+        },
+        {
+          "command": "diagsession.profiler.stop",
+          "when": "view == diagsession.profilerView && diagsession.profiler.state =~ /^(running|paused)$/",
+          "group": "navigation@2"
+        },
+        {
+          "command": "diagsession.profiler.discard",
+          "when": "view == diagsession.profilerView && diagsession.profiler.state =~ /^(running|paused)$/",
+          "group": "navigation@3"
+        },
+        {
+          "command": "diagsession.captures.openFile",
+          "when": "view == diagsession.capturesView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "diagsession.captures.refresh",
+          "when": "view == diagsession.capturesView",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "diagsession.captures.open",
+          "when": "view == diagsession.capturesView && viewItem == capture",
+          "group": "1_open@1"
+        },
+        {
+          "command": "diagsession.captures.reveal",
+          "when": "view == diagsession.capturesView && viewItem == capture",
+          "group": "1_open@2"
+        },
+        {
+          "command": "diagsession.captures.copyPath",
+          "when": "view == diagsession.capturesView && viewItem == capture",
+          "group": "2_copy"
+        },
+        {
+          "command": "diagsession.captures.delete",
+          "when": "view == diagsession.capturesView && viewItem == capture",
+          "group": "3_delete"
+        },
+        {
+          "command": "diagsession.captures.delete",
+          "when": "view == diagsession.capturesView && viewItem == capture",
+          "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        { "command": "diagsession.captures.open", "when": "false" },
+        { "command": "diagsession.captures.reveal", "when": "false" },
+        { "command": "diagsession.captures.copyPath", "when": "false" },
+        { "command": "diagsession.captures.delete", "when": "false" },
+        { "command": "diagsession.captures.refresh", "when": "false" }
+      ]
+    },
+    "configuration": {
+      "title": "DiagSession Profiler",
+      "properties": {
+        "diagsession.symbolPaths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "Extra folders (or `srv*cache*url` entries) searched for PDBs. The PDB folders recorded in the trace are always searched."
+        },
+        "diagsession.symbolCache": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Symbol cache folder (symstore layout). Empty uses Visual Studio's default `%TEMP%\\SymbolCache`, or the `symbolOptions.cachePath` of the workspace `launch.json` when present."
+        },
+        "diagsession.useMicrosoftSymbolServer": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Download missing PDBs of Windows modules from the Microsoft symbol server into the symbol cache. Slow on first use; can also be enabled per file with the **Load Microsoft symbols** button."
+        },
+        "diagsession.localSymbolsOnly": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Only load the PDBs that sit in the same folder as their `.exe` / `.dll`: those modules are your code, every other one is external. Much faster than searching the symbol paths. Right-click a frame or a module and choose **Load symbols** to search everywhere for one module; **Load Microsoft symbols** still loads the Windows ones."
+        },
+        "diagsession.useLaunchJsonSymbols": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Also use the `symbolSearchPath` and `symbolOptions.cachePath` of the workspace debug configurations (`launch.json`)."
+        },
+        "diagsession.sourcePathMappings": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "default": {},
+          "markdownDescription": "Map build-time source path prefixes to local folders, e.g. `{ \"D:\\\\a\\\\_work\\\\1\\\\s\": \"${workspaceFolder}\" }`."
+        },
+        "diagsession.sourceEditorLocation": {
+          "type": "string",
+          "enum": ["below", "beside", "active"],
+          "enumDescriptions": [
+            "In an editor group split below the report, reused for every source opened from it.",
+            "In the editor group to the side of the report.",
+            "In the report's editor group, as a new tab."
+          ],
+          "default": "below",
+          "description": "Where \"View source\" opens files."
+        },
+        "diagsession.showExternalCode": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Show external code in the reports (the **Show external code** checkbox). Off, runs of external frames collapse into `[External Code]`, as with Visual Studio's *Just My Code*."
+        },
+        "diagsession.externalNamespaces": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["std", "stdext"],
+          "markdownDescription": "C++ namespaces treated as external code, even inside your own modules: with **Show external code** off, their frames collapse into `[External Code]`. Nested namespaces work too (`boost::asio`). `std` also covers the STL's `__std_*` helpers."
+        },
+        "diagsession.profiler.outputFolder": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Folder where the profiler writes its `.diagsession` files. `${workspaceFolder}` is expanded; a relative path is relative to the first workspace folder. Empty uses the extension's storage. The Profiler view can override it per workspace."
+        },
+        "diagsession.profiler.vsDiagnosticsPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path of `VSDiagnostics.exe`. Empty finds it in the newest Visual Studio install (`Team Tools\\DiagnosticsHub\\Collector`)."
+        },
+        "diagsession.analyzerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Override the path of DiagSessionAnalyzer.exe (for development)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build:analyzer": "dotnet publish analyzer -c Release -o bin/analyzer --nologo",
+    "build:ts": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "build": "npm run build:analyzer && npm run build:ts",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p webview",
+    "package": "npm run build && vsce package --no-dependencies --skip-license --allow-missing-repository",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}
