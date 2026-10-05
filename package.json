@@ -2,7 +2,7 @@
   "name": "vscode-diagsession",
   "displayName": "DiagSession Profiler",
   "description": "Profile native Windows code in VS Code, based on the VSDiagnostics.exe Visual Studio tool, and open .diagsession files (CPU Usage): call tree, caller/callee, functions, modules, threads, flame graph and hot source lines.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "rivt",
   "engines": {
     "vscode": "^1.85.0"
