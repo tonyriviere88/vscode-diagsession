@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { JustMyCodeConfig } from './justMyCode';
 import { ProfileEditorProvider, rememberProcess } from './profileEditor';
 import { SourceAnnotations } from './sourceAnnotations';
 import { cacheRoot } from './analyzer';
@@ -13,6 +14,7 @@ export function activate(context: vscode.ExtensionContext): { annotations: Sourc
   const annotations = new SourceAnnotations();
   const profiler = new Profiler(context);
   const captures = new CapturesProvider(profiler);
+  const justMyCode = new JustMyCodeConfig();
 
   const openReport = (file: string) =>
     vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(file), ProfileEditorProvider.viewType);
@@ -32,9 +34,10 @@ export function activate(context: vscode.ExtensionContext): { annotations: Sourc
   context.subscriptions.push(
     annotations,
     profiler,
+    justMyCode,
     vscode.window.registerCustomEditorProvider(
       ProfileEditorProvider.viewType,
-      new ProfileEditorProvider(context, annotations),
+      new ProfileEditorProvider(context, annotations, justMyCode),
       { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true },
     ),
     vscode.window.registerWebviewViewProvider(ProfilerViewProvider.viewId, new ProfilerViewProvider(context, profiler)),

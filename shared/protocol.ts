@@ -1,5 +1,7 @@
 // Types shared by the extension host and the webview.
 
+import type { JmcConfig } from './jmc';
+
 /** The JSON written by DiagSessionAnalyzer (see analyzer/Program.cs). Arrays are columnar to keep it compact. */
 export interface RawProfile {
   version: number;
@@ -36,10 +38,17 @@ export interface LineHits {
   [line: number]: [number, number];
 }
 
+/** The Just My Code rules of a report: `.vscode/jmc.json` of its workspace folder. */
+export interface JmcSettings {
+  config: JmcConfig;
+  /** Expands `${workspaceFolder}` in the file rules. */
+  workspaceFolder?: string;
+}
+
 export type ToWebview =
   | { type: 'progress'; text: string }
-  | { type: 'profile'; json: string; fromCache: boolean; externalNamespaces: string[]; showExternalCode: boolean }
-  | { type: 'externalNamespaces'; namespaces: string[] }
+  | { type: 'profile'; json: string; fromCache: boolean; justMyCode: JmcSettings; showExternalCode: boolean }
+  | { type: 'justMyCode'; jmc: JmcSettings }
   | { type: 'showExternalCode'; show: boolean }
   | { type: 'error'; text: string };
 

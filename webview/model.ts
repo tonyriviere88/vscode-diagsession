@@ -1,4 +1,5 @@
-import type { LineHits, RawProfile } from '../shared/protocol';
+import { JmcRules } from '../shared/jmc';
+import type { JmcSettings, LineHits, RawProfile } from '../shared/protocol';
 
 /** What part of the capture the views look at. */
 export interface Filter {
@@ -107,18 +108,6 @@ const MAIN_ENTRY = /^(?:w?mainCRTStartup|w?WinMainCRTStartup|__scrt_common_main(
 /** A thread unsampled for more than this many intervals was not running: a pause in its activity. */
 const GAP_SAMPLES = 4;
 
-/**
- * Matches functions of the given C++ namespaces (`std`, `boost::asio`...), external even when compiled into the
- * user's own modules. `std` also covers the STL's `__std_*` helpers.
- */
-function namespaceMatcher(namespaces: readonly string[]): RegExp | null {
-  const names = namespaces.map((n) => n.trim().replace(/^::|::$/g, '')).filter((n) => n.length > 0);
-  if (!names.length) return null;
-  const alts = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '::');
-  if (names.includes('std')) alts.push('__std_');
-  return new RegExp(`^(?:${alts.join('|')})`);
-}
-
 export class Profile {
   readonly raw: RawProfile;
   readonly nFuncs: number;
@@ -142,7 +131,7 @@ export class Profile {
   /** Index of the process's main thread, -1 when it cannot be told. */
   readonly mainThread: number;
 
-  constructor(raw: RawProfile, externalNamespaces: readonly string[]) {
+  constructor(raw: RawProfile, justMyCode: JmcSettings) {
     this.raw = raw;
     this.nFuncs = raw.funcNames.length;
     this.NO_STACK = this.nFuncs;
@@ -168,7 +157,7 @@ export class Profile {
         this.funcNoSymbol[f] = 1;
       }
     }
-    this.setExternalNamespaces(externalNamespaces);
+    this.setJustMyCode(justMyCode);
 
     let last = 0;
     for (const t of raw.sampleTime) if (t > last) last = t;
@@ -253,17 +242,23 @@ export class Profile {
   }
 
   /**
-   * External code: frames of system or symbol-less modules (with local symbols only, of modules whose PDB was not
-   * next to them), and functions of the given namespaces.
+   * External code: frames of symbol-less modules (with local symbols only, of modules whose PDB was not next to them)
+   * and code the Just My Code rules make external: by default system modules, the STL, CRT and Windows SDK. A "user"
+   * rule wins over all of them.
    */
-  setExternalNamespaces(namespaces: readonly string[]): void {
-    const re = namespaceMatcher(namespaces);
+  setJustMyCode(jmc: JmcSettings): void {
+    const rules = new JmcRules(jmc.config, jmc.workspaceFolder);
     const local = this.raw.localSymbols;
     for (let f = 0; f < this.nFuncs; f++) {
       const m = this.raw.modules[this.funcModule[f]];
+      const kind = rules.classify({
+        fn: this.funcNoSymbol[f] ? undefined : this.funcNames[f],
+        module: m?.name,
+        file: this.funcSource(f)?.file,
+      });
       const external =
-        !m || m.system || !m.symbols || (local && !m.local) || (!!re && !this.funcNoSymbol[f] && re.test(this.funcNames[f]));
-      this.funcExternal[f] = external ? 1 : 0;
+        kind === 'external' || !m || !m.symbols || (local && !m.local) || (rules.inheritDefaults && m.system);
+      this.funcExternal[f] = kind !== 'user' && external ? 1 : 0;
     }
   }
 

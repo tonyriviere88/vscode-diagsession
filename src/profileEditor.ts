@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import { analyze } from './analyzer';
+import type { JustMyCodeConfig } from './justMyCode';
 import { SourceAnnotations } from './sourceAnnotations';
 import type { FromWebview, ToWebview } from '../shared/protocol';
 
@@ -13,7 +14,6 @@ interface Choice {
 
 const choiceKey = (file: string) => 'choice:' + file.toLowerCase();
 
-const externalNamespaces = () => vscode.workspace.getConfiguration('diagsession').get<string[]>('externalNamespaces', []);
 const showExternalCode = () => vscode.workspace.getConfiguration('diagsession').get<boolean>('showExternalCode', false);
 
 /** Saves the checkbox where the effective value comes from, so a workspace value is not shadowing it. */
@@ -47,6 +47,7 @@ export class ProfileEditorProvider implements vscode.CustomReadonlyEditorProvide
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly annotations: SourceAnnotations,
+    private readonly justMyCode: JustMyCodeConfig,
   ) {}
 
   openCustomDocument(uri: vscode.Uri): ProfileDocument {
@@ -85,7 +86,7 @@ export class ProfileEditorProvider implements vscode.CustomReadonlyEditorProvide
           type: 'profile',
           json: result.json,
           fromCache: result.fromCache,
-          externalNamespaces: externalNamespaces(),
+          justMyCode: this.justMyCode.settingsFor(document.uri),
           showExternalCode: showExternalCode(),
         });
       } catch (e) {
@@ -126,15 +127,19 @@ export class ProfileEditorProvider implements vscode.CustomReadonlyEditorProvide
     });
     const config = vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('diagsession.showExternalCode')) post({ type: 'showExternalCode', show: showExternalCode() });
-      if (e.affectsConfiguration('diagsession.externalNamespaces')) post({ type: 'externalNamespaces', namespaces: externalNamespaces() });
       if (e.affectsConfiguration('diagsession.localSymbolsOnly')) {
         post({ type: 'progress', text: 'Reloading symbols…' });
         void load(this.context.workspaceState.get<Choice>(key) ?? {});
       }
     });
+    const jmcKey = this.justMyCode.keyFor(document.uri);
+    const jmc = this.justMyCode.onDidChange((key) => {
+      if (key === jmcKey) post({ type: 'justMyCode', jmc: this.justMyCode.settingsFor(document.uri) });
+    });
     panel.onDidDispose(() => {
       running?.cancel();
       config.dispose();
+      jmc.dispose();
       this.annotations.clear(panel);
     });
   }

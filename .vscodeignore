@@ -6,5 +6,6 @@
 !dist/webview.js
 !dist/profiler.js
 !media/**
+!schemas/**
 !bin/analyzer/**
 bin/analyzer/*.pdb

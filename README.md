@@ -26,11 +26,29 @@ Right-click a table header to choose its columns (*Total samples*, *Self samples
 by default). The choice is remembered per view.
 
 **Show external code** (`diagsession.showExternalCode`, off by default; the checkbox saves the setting and every open
-report follows it) off works like VS's *Just My Code*: runs of Windows frames, symbol-less frames (with
-`diagsession.localSymbolsOnly`, frames of modules whose PDB is not next to them) and functions of
-the C++ namespaces listed in `diagsession.externalNamespaces` (default `std` and `stdext`; `std` also covers the
-STL's `__std_*` helpers) collapse into one `[External Code]` frame. That frame is
-named after the function the run was entered through, for example `[External Code] std::sort<int *>`.
+report follows it) off works like VS's *Just My Code*: runs of external frames collapse into one `[External Code]`
+frame, named after the function the run was entered through, for example `[External Code] std::sort<int *>`.
+
+External code is symbol-less frames (with `diagsession.localSymbolsOnly`, frames of modules whose PDB is not next to
+them) and whatever the Just My Code rules of `.vscode/jmc.json` make external. The file is the one of the WinDbg
+extension (JSON with comments, validated against [schemas/jmc.schema.json](schemas/jmc.schema.json)), so the debugger
+and the profiler agree on what your code is:
+
+```jsonc
+{
+    // Keep the built-in rules: Windows modules, the STL (std, stdext, __std_*), the CRT and the Windows SDK.
+    "inheritDefaults": true,
+    "external": {
+        "symbols": ["boost::*", "MyLib::Detail"],   // namespaces, classes or functions; "module!pattern" also checks the module
+        "files": ["third_party/*"],                 // source files or directories; ${workspaceFolder} is supported
+        "modules": ["Qt6*"]                         // module names without extension
+    },
+    "user": { "symbols": [], "files": [], "modules": [] }   // always user code, even when an external rule matches
+}
+```
+
+`*` and `?` are wildcards; `std` matches `std::*` and `std<...>`. A report uses the file of the workspace folder that
+holds the capture (else of the first folder) and follows its edits. Without the file, the built-in rules apply.
 
 ## Recording a profile
 

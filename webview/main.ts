@@ -1,4 +1,4 @@
-import type { FromWebview, RawProfile, ToWebview } from '../shared/protocol';
+import type { FromWebview, JmcSettings, RawProfile, ToWebview } from '../shared/protocol';
 import type { AppApi, MenuItem, View } from './api';
 import { Profile, type Filter, type Selection, type TreeNode } from './model';
 import { setColumnStore } from './table';
@@ -52,8 +52,8 @@ class App implements AppApi {
   /** Removes the window listeners when the report is rebuilt. */
   private readonly disposer = new AbortController();
 
-  constructor(raw: RawProfile, externalNamespaces: string[], showExternalCode: boolean) {
-    this.profile = new Profile(raw, externalNamespaces);
+  constructor(raw: RawProfile, justMyCode: JmcSettings, showExternalCode: boolean) {
+    this.profile = new Profile(raw, justMyCode);
     const state = host.getState() ?? {};
     this.filter = { t0: 0, t1: Infinity, threads: null, hideExternal: !showExternalCode };
     setColumnStore({
@@ -123,7 +123,7 @@ class App implements AppApi {
       'div',
       { class: 'toolbar' },
       el('label', { class: 'field' }, 'Process ', procSelect),
-      el('label', { class: 'check', title: 'Off: runs of Windows / symbol-less frames collapse into [External Code]' }, ext, 'Show external code'),
+      el('label', { class: 'check', title: 'Off: runs of external frames (Windows, symbol-less, .vscode/jmc.json rules) collapse into [External Code]' }, ext, 'Show external code'),
       this.threadBadge,
       el('span', { class: 'spacer' }),
       this.searchBox,
@@ -386,8 +386,9 @@ class App implements AppApi {
     this.invalidate(false);
   }
 
-  setExternalNamespaces(namespaces: string[]): void {
-    this.profile.setExternalNamespaces(namespaces);
+  /** `.vscode/jmc.json` changed. */
+  setJustMyCode(jmc: JmcSettings): void {
+    this.profile.setJustMyCode(jmc);
     this.invalidate(false);
   }
 
@@ -463,7 +464,7 @@ window.addEventListener('message', (ev: MessageEvent<ToWebview>) => {
       const previous = app?.captureState();
       app?.dispose();
       appHost.innerHTML = '';
-      app = new App(raw, m.externalNamespaces, m.showExternalCode);
+      app = new App(raw, m.justMyCode, m.showExternalCode);
       if (previous) app.restoreState(previous);
       appHost.append(app.root);
       app.start();
@@ -472,8 +473,8 @@ window.addEventListener('message', (ev: MessageEvent<ToWebview>) => {
     case 'showExternalCode':
       app?.setShowExternalCode(m.show);
       break;
-    case 'externalNamespaces':
-      app?.setExternalNamespaces(m.namespaces);
+    case 'justMyCode':
+      app?.setJustMyCode(m.jmc);
       break;
   }
 });

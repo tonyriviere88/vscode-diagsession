@@ -10,6 +10,8 @@ const builds = [
     format: 'cjs',
     external: ['vscode'],
     target: 'node18',
+    // jsonc-parser's UMD "main" hides its requires from esbuild
+    mainFields: ['module', 'main'],
   },
   {
     entryPoints: ['webview/main.ts'],
