@@ -25,7 +25,10 @@ export function frameColors(p: Profile, func: number, searching: boolean, matche
   return [`hsl(${hue}, ${sat}%, ${light}%)`, '#f2f2f2'];
 }
 
-/** Canvas flame graph of a call tree: click zooms into a frame, the frames above it stay as breadcrumbs. */
+/**
+ * Canvas flame graph of a call tree: click zooms into a frame, the frames above it stay as breadcrumbs. Ctrl+wheel
+ * magnifies the zoomed frame around the cursor, dragging or Shift+wheel pans it.
+ */
 export class FlameGraph {
   readonly element: HTMLElement;
   private readonly scroller: HTMLElement;
@@ -37,6 +40,12 @@ export class FlameGraph {
   private hover: TreeNode | null = null;
   private search: RegExp | null = null;
   private matchTotal = 0;
+  /** The part of the zoomed frame shown, as fractions of its width. */
+  private v0 = 0;
+  private v1 = 1;
+  private drag: { x: number; y: number; v0: number; top: number; moved: boolean } | null = null;
+  /** The click that ends a drag does not zoom. */
+  private dragged = false;
   inverted = false; // true = classic flame (root at the bottom)
   private frame = 0;
 
@@ -45,7 +54,7 @@ export class FlameGraph {
     private readonly handlers: {
       onActivate: (node: TreeNode) => void;
       onContextMenu: (node: TreeNode, ev: MouseEvent) => void;
-      onFocusChange: (node: TreeNode | null) => void;
+      onZoomChange: (focus: TreeNode | null) => void;
     },
   ) {
     this.canvas = el('canvas', { class: 'flame-canvas' });
@@ -59,7 +68,26 @@ export class FlameGraph {
       this.tooltip.classList.add('hidden');
       this.schedule();
     });
+    // Pointer capture keeps the drag going when the pointer leaves the canvas.
+    this.canvas.addEventListener('pointerdown', (e) => {
+      this.dragged = false;
+      if (e.button !== 0) return;
+      this.drag = { x: e.clientX, y: e.clientY, v0: this.v0, top: this.scroller.scrollTop, moved: false };
+      this.canvas.setPointerCapture(e.pointerId);
+    });
+    this.canvas.addEventListener('pointermove', (e) => this.onDrag(e));
+    const endDrag = () => {
+      this.dragged = !!this.drag?.moved;
+      this.drag = null;
+      this.canvas.classList.remove('panning');
+    };
+    this.canvas.addEventListener('pointerup', endDrag);
+    this.canvas.addEventListener('pointercancel', endDrag);
     this.canvas.addEventListener('click', (e) => {
+      if (this.dragged) {
+        this.dragged = false;
+        return;
+      }
       const h = this.hitAt(e);
       if (h) this.zoom(h.node);
     });
@@ -73,6 +101,7 @@ export class FlameGraph {
       e.preventDefault();
       this.handlers.onContextMenu(h.node, e);
     });
+    this.canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
   }
 
   setTree(root: TreeNode): void {
@@ -81,13 +110,22 @@ export class FlameGraph {
     for (let n = this.focus; n && n.parent; n = n.parent) path.unshift(n.func);
     this.root = root;
     let f: TreeNode = root;
+    let found = true;
     for (const func of path) {
       const c = f.children.find((x) => x.func === func);
-      if (!c) break;
+      if (!c) {
+        found = false;
+        break;
+      }
       f = c;
     }
+    // The magnified part only means something in the same frame.
+    if (!found) {
+      this.v0 = 0;
+      this.v1 = 1;
+    }
     this.focus = f;
-    this.handlers.onFocusChange(f === root ? null : f);
+    this.notifyZoom();
     this.schedule();
   }
 
@@ -115,11 +153,37 @@ export class FlameGraph {
     return this.focus === this.root ? null : this.focus;
   }
 
+  /** The part of the zoomed frame shown (Ctrl+wheel), as fractions of its width. */
+  get window(): [number, number] {
+    return [this.v0, this.v1];
+  }
+
+  get isZoomed(): boolean {
+    return this.zoomed !== null || this.v0 > 0 || this.v1 < 1;
+  }
+
   zoom(node: TreeNode | null): void {
     this.focus = node ?? this.root;
-    this.handlers.onFocusChange(this.focus === this.root ? null : this.focus);
+    this.v0 = 0;
+    this.v1 = 1;
+    this.notifyZoom();
     this.scroller.scrollTop = this.inverted ? this.scroller.scrollHeight : 0;
     this.schedule();
+  }
+
+  setWindow(a: number, b: number): void {
+    // No closer than one sample across the whole width.
+    const min = Math.min(1, 1 / Math.max(1, this.focus?.total ?? 1));
+    const span = Math.min(1, Math.max(min, b - a));
+    a = Math.max(0, Math.min(1 - span, a));
+    this.v0 = a;
+    this.v1 = a + span;
+    this.notifyZoom();
+    this.schedule();
+  }
+
+  private notifyZoom(): void {
+    this.handlers.onZoomChange(this.zoomed);
   }
 
   zoomToFunc(func: number): boolean {
@@ -158,13 +222,20 @@ export class FlameGraph {
     // Ancestors of the focus, then the focus subtree down to frames of at least half a pixel.
     const ancestors: TreeNode[] = [];
     for (let n = focus.parent; n; n = n.parent) ancestors.unshift(n);
-    const scale = focus.total > 0 ? width / focus.total : 0;
+    const scale = focus.total > 0 ? width / ((this.v1 - this.v0) * focus.total) : 0;
+    const x0 = -this.v0 * focus.total * scale;
+    // Only the frames in view count, so a magnified frame does not leave empty rows below.
     let maxDepth = 0;
-    const walk: [TreeNode, number][] = [[focus, 0]];
+    const walk: [TreeNode, number, number][] = [[focus, x0, 0]];
     while (walk.length) {
-      const [n, d] = walk.pop()!;
+      const [n, x, d] = walk.pop()!;
       if (d > maxDepth) maxDepth = d;
-      for (const c of n.children) if (c.total * scale >= 0.5) walk.push([c, d + 1]);
+      let cx = x;
+      for (const c of n.children) {
+        const cw = c.total * scale;
+        if (cw >= 0.5 && cx + cw > 0 && cx < width) walk.push([c, cx, d + 1]);
+        cx += cw;
+      }
     }
     const rows = ancestors.length + maxDepth + 1;
     const height = Math.max(this.scroller.clientHeight, rows * ROW + 4);
@@ -189,7 +260,10 @@ export class FlameGraph {
     const yOf = (row: number) => (this.inverted ? height - (row + 1) * ROW : row * ROW);
     const re = this.search;
 
-    const box = (n: TreeNode, x: number, w: number, row: number, matched: boolean, dim: boolean) => {
+    const box = (n: TreeNode, left: number, right: number, row: number, matched: boolean, dim: boolean) => {
+      // Clipped to the view, so a magnified frame keeps its label in sight.
+      const x = Math.max(0, left);
+      const w = Math.min(width, right) - x;
       const y = yOf(row);
       const [fill, text] = this.color(n, matched);
       ctx.fillStyle = fill;
@@ -223,15 +297,53 @@ export class FlameGraph {
     const draw = (n: TreeNode, x: number, row: number, underMatch: boolean) => {
       const w = n.total * scale;
       const matched = underMatch || (!!re && n !== root && re.test(this.profile.fullName(n.func)));
-      box(n, x, w, row, matched, false);
+      box(n, x, x + w, row, matched, false);
       let cx = x;
       for (const ch of n.children) {
         const cw = ch.total * scale;
-        if (cw >= 0.5) draw(ch, cx, row + 1, matched);
+        if (cw >= 0.5 && cx + cw > 0 && cx < width) draw(ch, cx, row + 1, matched);
         cx += cw;
       }
     };
-    draw(focus, 0, base, false);
+    draw(focus, x0, base, false);
+  }
+
+  private onWheel(e: WheelEvent): void {
+    const span = this.v1 - this.v0;
+    const perPx = span / Math.max(1, this.scroller.clientWidth);
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const at = this.v0 + e.offsetX * perPx;
+      const f = Math.exp(Math.max(-1, Math.min(1, e.deltaY * 0.002)));
+      this.setWindow(at - (at - this.v0) * f, at + (this.v1 - at) * f);
+    } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      e.preventDefault();
+      const dx = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * perPx;
+      this.setWindow(this.v0 + dx, this.v1 + dx);
+    } else {
+      return; // A plain wheel scrolls the rows.
+    }
+    this.hover = null;
+    this.tooltip.classList.add('hidden');
+  }
+
+  private onDrag(e: PointerEvent): void {
+    const d = this.drag;
+    if (!d) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    if (!d.moved) {
+      if (Math.abs(dx) + Math.abs(dy) <= 3) return;
+      d.moved = true;
+      this.canvas.classList.add('panning');
+      this.hover = null;
+      this.tooltip.classList.add('hidden');
+      this.schedule();
+    }
+    const span = this.v1 - this.v0;
+    const perPx = span / Math.max(1, this.scroller.clientWidth);
+    this.setWindow(d.v0 - dx * perPx, d.v0 - dx * perPx + span);
+    this.scroller.scrollTop = d.top - dy;
   }
 
   private hitAt(e: MouseEvent): Hit | undefined {
@@ -245,6 +357,7 @@ export class FlameGraph {
   }
 
   private onMove(e: MouseEvent): void {
+    if (this.drag?.moved) return;
     const h = this.hitAt(e);
     const node = h?.node ?? null;
     if (node !== this.hover) {
@@ -265,7 +378,7 @@ export class FlameGraph {
       `<table><tr><td>Total</td><td>${ms(node.total)}</td><td>${fmtPct((100 * node.total) / all)}</td></tr>` +
       `<tr><td>Self</td><td>${ms(node.self)}</td><td>${fmtPct((100 * node.self) / all)}</td></tr>` +
       (this.search ? `<tr><td>Matches</td><td>${ms(this.matchTotal)}</td><td>${fmtPct((100 * this.matchTotal) / all)}</td></tr>` : '') +
-      `</table><div class="tt-hint">click: zoom · double-click: source · right-click: more</div>`;
+      `</table><div class="tt-hint">click: zoom · ctrl+wheel: magnify · drag: pan · double-click: source · right-click: more</div>`;
     this.tooltip.classList.remove('hidden');
     const rect = this.element.getBoundingClientRect();
     const tw = this.tooltip.offsetWidth;

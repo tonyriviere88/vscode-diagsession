@@ -1,0 +1,5 @@
+{
+  // The Run and Debug "Network" view makes js-debug enable network inspection in the Extension Host,
+  // which aborts it (exit code 134) about a second after launch, so the host window closes again.
+  "debug.javascript.enableNetworkView": false
+}

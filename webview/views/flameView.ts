@@ -6,6 +6,8 @@ interface FlameState {
   inverted: boolean;
   groupByThread: boolean;
   zoom: PathStep[];
+  /** The magnified part of the zoomed frame (Ctrl+wheel); missing in states saved before it existed. */
+  window?: [number, number];
 }
 import { el, fmtMs, fmtPct } from '../util';
 
@@ -21,6 +23,7 @@ export class FlameView implements View {
   private pendingFunc: number | null = null;
   private root: TreeNode | null = null;
   private pendingZoom: PathStep[] | null = null;
+  private pendingWindow: [number, number] | null = null;
   private readonly setMode: (inverted: boolean) => void;
   private readonly groupBox: HTMLInputElement;
 
@@ -30,9 +33,9 @@ export class FlameView implements View {
     this.graph = new FlameGraph(app.profile, {
       onActivate: (n) => app.openSource(n.func),
       onContextMenu: (n, ev) => app.functionMenu(ev, n.func, n),
-      onFocusChange: (n) => {
+      onZoomChange: (n) => {
         this.crumb.textContent = n ? `Zoomed: ${app.profile.funcLabel(n.func)}` : '';
-        reset.disabled = !n;
+        reset.disabled = !this.graph.isZoomed;
       },
     });
     const reset = el('button', {}, 'Reset zoom');
@@ -60,20 +63,35 @@ export class FlameView implements View {
     this.element = el(
       'div',
       { class: 'view' },
-      el('div', { class: 'view-toolbar' }, mode, el('label', { class: 'check' }, group, 'Group by thread'), reset, this.crumb, this.status),
+      el(
+        'div',
+        { class: 'view-toolbar' },
+        mode,
+        el('label', { class: 'check' }, group, 'Group by thread'),
+        reset,
+        el('span', { class: 'hint' }, 'Click: zoom · Ctrl+wheel: magnify · drag: pan'),
+        this.crumb,
+        this.status,
+      ),
       this.graph.element,
     );
   }
 
   saveState(): FlameState {
     const z = this.graph.zoomed;
-    return { inverted: this.graph.inverted, groupByThread: this.groupByThread, zoom: z ? nodePath(this.app.profile, z) : [] };
+    return {
+      inverted: this.graph.inverted,
+      groupByThread: this.groupByThread,
+      zoom: z ? nodePath(this.app.profile, z) : [],
+      window: this.graph.window,
+    };
   }
 
   restoreState(s: FlameState): void {
     this.setMode(s.inverted);
     this.groupByThread = this.groupBox.checked = s.groupByThread;
     this.pendingZoom = s.zoom.length ? s.zoom : null;
+    this.pendingWindow = s.window ?? null;
   }
 
   showFunc(func: number): void {
@@ -84,10 +102,13 @@ export class FlameView implements View {
     const sel = this.app.selection(this.groupByThread);
     this.root = this.app.profile.topDown(sel, this.app.filter.hideExternal);
     this.graph.setTree(this.root);
-    if (this.pendingZoom) {
-      const n = followPath(this.app.profile, this.root, this.pendingZoom).node;
-      this.pendingZoom = null;
-      if (n !== this.root) this.graph.zoom(n);
+    if (this.pendingZoom || this.pendingWindow) {
+      const path = this.pendingZoom ?? [];
+      const { node, matched } = followPath(this.app.profile, this.root, path);
+      if (node !== this.root) this.graph.zoom(node);
+      // The magnified part is only meaningful in the frame it was taken in.
+      if (this.pendingWindow && matched === path.length) this.graph.setWindow(...this.pendingWindow);
+      this.pendingZoom = this.pendingWindow = null;
     } else if (this.pendingFunc !== null) {
       if (!this.graph.zoomToFunc(this.pendingFunc)) this.app.toast('Function not in the flame graph (external code hidden?)');
       this.pendingFunc = null;

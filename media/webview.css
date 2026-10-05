@@ -232,6 +232,7 @@ tr.link:hover { background: var(--row-hover); }
 .flame { flex: 1; position: relative; min-height: 0; }
 .flame-scroller { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; }
 .flame-canvas { display: block; cursor: pointer; }
+.flame-canvas.panning { cursor: grabbing; }
 .tooltip {
   position: absolute;
   pointer-events: none;
