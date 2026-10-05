@@ -99,8 +99,13 @@ export class Profiler implements vscode.Disposable {
   }
 
   async forgetCapture(file: string): Promise<void> {
+    await this.forgetCaptures([file]);
+  }
+
+  async forgetCaptures(files: string[]): Promise<void> {
+    const gone = new Set(files.map((f) => f.toLowerCase()));
     const list = this.context.globalState.get<string[]>(CAPTURES_KEY, []);
-    await this.context.globalState.update(CAPTURES_KEY, list.filter((f) => f.toLowerCase() !== file.toLowerCase()));
+    await this.context.globalState.update(CAPTURES_KEY, list.filter((f) => !gone.has(f.toLowerCase())));
     this.changed.fire();
   }
 

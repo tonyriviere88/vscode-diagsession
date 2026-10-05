@@ -159,6 +159,13 @@
         "title": "Delete",
         "category": "DiagSession",
         "icon": "$(trash)"
+      },
+      {
+        "command": "diagsession.captures.deleteAll",
+        "title": "Delete All Captures",
+        "category": "DiagSession",
+        "icon": "$(trash)",
+        "enablement": "diagsession.hasCaptures"
       }
     ],
     "menus": {
@@ -207,6 +214,11 @@
           "command": "diagsession.clearSourceAnnotations",
           "when": "view == diagsession.capturesView && diagsession.hasSourceAnnotations",
           "group": "navigation@3"
+        },
+        {
+          "command": "diagsession.captures.deleteAll",
+          "when": "view == diagsession.capturesView",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [

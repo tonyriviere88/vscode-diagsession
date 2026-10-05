@@ -49,6 +49,7 @@ export class CapturesProvider implements vscode.TreeDataProvider<CaptureItem> {
       const stat = await fs.promises.stat(f).catch(() => undefined);
       if (stat?.isFile()) items.push(new CaptureItem(f, stat));
     }
+    void vscode.commands.executeCommand('setContext', 'diagsession.hasCaptures', items.length > 0);
     return items.sort((a, b) => b.mtime - a.mtime);
   }
 }

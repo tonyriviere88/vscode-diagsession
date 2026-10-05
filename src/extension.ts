@@ -104,6 +104,24 @@ export function activate(context: vscode.ExtensionContext): { annotations: Sourc
         await profiler.forgetCapture(item.file);
       }),
     ),
+    vscode.commands.registerCommand(
+      'diagsession.captures.deleteAll',
+      guarded(async () => {
+        const files = (await captures.getChildren()).map((c) => c.file);
+        if (!files.length) return;
+        const answer = await vscode.window.showWarningMessage(
+          files.length === 1 ? `Delete ${path.basename(files[0])}?` : `Delete all ${files.length} captures?`,
+          { modal: true, detail: 'The files are deleted from disk.' },
+          'Delete All',
+        );
+        if (answer !== 'Delete All') return;
+        // Delete what can be, then forget those, so one locked file does not keep the others.
+        const results = await Promise.allSettled(files.map((f) => fs.promises.rm(f, { force: true })));
+        await profiler.forgetCaptures(files.filter((_, i) => results[i].status === 'fulfilled'));
+        const failed = files.filter((_, i) => results[i].status === 'rejected');
+        if (failed.length) throw new Error(`Could not delete ${failed.map((f) => path.basename(f)).join(', ')}.`);
+      }),
+    ),
   );
   return { annotations, profiler }; // for integration tests
 }

@@ -59,8 +59,9 @@ Stopping takes about 20 s, because the collector merges the kernel trace. The re
 The session survives a window reload.
 
 The **Captures** view lists the recorded files, newest first. Right-click an entry to open it, reveal it in File
-Explorer, copy its path or delete it. Captures go to `diagsession.profiler.outputFolder` (the view can override it per
-workspace), else to the extension's storage. They are ordinary `.diagsession` files that Visual Studio opens too.
+Explorer, copy its path or delete it; the 🗑 button in the view's title bar deletes them all. Captures go to
+`diagsession.profiler.outputFolder` (the view can override it per workspace), else to the extension's storage. They are
+ordinary `.diagsession` files that Visual Studio opens too.
 
 ## How it works
 
