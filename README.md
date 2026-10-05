@@ -125,6 +125,10 @@ npm run package    # builds a .vsix
 
 Press F5 in VS Code to run the extension in a development host.
 
+Pushing a version tag (`git tag v1.2.3 && git push origin v1.2.3`, matching `version` in `package.json`) runs the
+*Release* GitHub workflow, which builds the `.vsix` and attaches it to a GitHub release of that tag. Running the
+workflow by hand from the Actions tab builds the `.vsix` as a workflow artifact only.
+
 ## Limits
 
 - CPU sampling only sees threads while they run. Time spent blocked (locks, I/O, sleeps) does not appear; VS has
