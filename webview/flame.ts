@@ -46,6 +46,14 @@ export class FlameGraph {
   private drag: { x: number; y: number; v0: number; top: number; moved: boolean } | null = null;
   /** The click that ends a drag does not zoom. */
   private dragged = false;
+  /** A frame to put back at this offset from the top of the viewport on the next draw. */
+  private anchor: { node: TreeNode; top: number } | null = null;
+  /** The zoomed frame was picked by the user: keep it in view when the layout changes. */
+  private reveal = false;
+  /** zoom() ran since the last draw. */
+  private zoomedNow = false;
+  /** Canvas height and viewport size of the last draw, to tell a layout change from a repaint. */
+  private laidOut = { height: 0, width: 0, view: 0 };
   inverted = false; // true = classic flame (root at the bottom)
   private frame = 0;
 
@@ -163,11 +171,17 @@ export class FlameGraph {
   }
 
   zoom(node: TreeNode | null): void {
+    const prev = this.focus;
     this.focus = node ?? this.root;
     this.v0 = 0;
     this.v1 = 1;
+    // The zoomed frame keeps its row, so hold it where it is on screen rather than scrolling; when zooming out, hold
+    // the frame just left. A frame not on screen yet is scrolled into view by the next draw.
+    const held = this.hits.find((h) => h.node === this.focus) ?? (node ? undefined : this.hits.find((h) => h.node === prev));
+    this.anchor = held ? { node: held.node, top: held.y - this.scroller.scrollTop } : null;
+    this.reveal = node !== null;
+    this.zoomedNow = true;
     this.notifyZoom();
-    this.scroller.scrollTop = this.inverted ? this.scroller.scrollHeight : 0;
     this.schedule();
   }
 
@@ -306,6 +320,33 @@ export class FlameGraph {
       }
     };
     draw(focus, x0, base, false);
+    this.placeScroll(height, width);
+  }
+
+  /** Scrolls only as needed: to hold the anchored frame in place, and to keep the zoomed frame in view after a resize. */
+  private placeScroll(height: number, width: number): void {
+    const s = this.scroller;
+    const view = s.clientHeight;
+    const last = this.laidOut;
+    const relaid = height !== last.height || width !== last.width || view !== last.view;
+    // A classic flame grows from the bottom: when the canvas height changes, keep the distance to the bottom.
+    if (this.inverted && last.height && height !== last.height) s.scrollTop += height - last.height;
+    this.laidOut = { height, width, view };
+    const anchor = this.anchor;
+    this.anchor = null;
+    const zoomed = this.zoomedNow;
+    this.zoomedNow = false;
+    if (anchor) {
+      const h = this.hits.find((x) => x.node === anchor.node);
+      if (h) s.scrollTop = h.y - anchor.top;
+    } else if (!relaid && !zoomed) {
+      return;
+    }
+    if (!this.reveal || !this.zoomed) return;
+    const h = this.hits.find((x) => x.node === this.focus);
+    if (!h) return;
+    if (h.y < s.scrollTop) s.scrollTop = h.y;
+    else if (h.y + ROW > s.scrollTop + view) s.scrollTop = h.y + ROW - view;
   }
 
   private onWheel(e: WheelEvent): void {

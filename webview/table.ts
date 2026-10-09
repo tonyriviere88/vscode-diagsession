@@ -88,7 +88,20 @@ export class VirtualTable<R> {
       this.header.scrollLeft = this.body.scrollLeft; // the header follows when the columns are wider than the view
       this.schedule();
     });
-    new ResizeObserver(() => this.schedule()).observe(this.body);
+    let view = 0;
+    new ResizeObserver(() => {
+      // When the view shrinks (e.g. VS Code opens an editor beside it), keep the selected row in sight if it was.
+      const was = view;
+      view = this.body.clientHeight;
+      const i = this.selected === null ? -1 : this.rows.indexOf(this.selected);
+      if (i >= 0 && view > 0 && view < was) {
+        const top = i * this.rowHeight;
+        const bottom = top + this.rowHeight;
+        const st = this.body.scrollTop;
+        if (top >= st && bottom <= st + was && bottom > st + view) this.body.scrollTop = bottom - view;
+      }
+      this.schedule();
+    }).observe(this.body);
     this.body.addEventListener('click', (ev) => this.onClick(ev));
     this.body.addEventListener('contextmenu', (ev) => {
       const row = this.rowAt(ev);
